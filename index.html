@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マルチノタクト - 数学ゲームで遊ぼう！</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            background-color: #f0f4f8;
+            color: #333;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+            transition: background-color 2s ease;
+            overflow-x: hidden;
+        }
+
+        /* --- 悲しい演出モード --- */
+        body.sad-mode { background-color: #1a1a24; }
+        body.sad-mode .container { background: #2c3e50; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        body.sad-mode .header-title,
+        body.sad-mode .main-title { color: #7f8c8d; }
+
+        /* --- 紙吹雪 --- */
+        .confetti {
+            position: fixed; top: -10px; width: 15px; height: 15px;
+            z-index: 9999; pointer-events: none; animation: fall linear forwards;
+        }
+        @keyframes fall {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(110vh) rotate(720deg); opacity: 0.8; }
+        }
+
+        /* --- 開始オーバーレイ --- */
+        #start-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(44, 62, 80, 0.98); color: white;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 10000;
+        }
+        #start-overlay h1 { font-size: 2.8rem; margin-bottom: 10px; color: #ecf0f1; letter-spacing: 2px; }
+        #start-overlay p { font-size: 1.2rem; color: #bdc3c7; margin-bottom: 30px; }
+
+        .header-title { color: #2c3e50; font-size: 1.2rem; margin-bottom: 5px; transition: color 2s ease; }
+        .main-title { color: #e67e22; font-size: 2.3rem; margin-top: 0; letter-spacing: 2px; transition: color 2s ease; }
+        .container {
+            max-width: 640px; margin: 0 auto; background: white;
+            padding: 40px 16px; border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05); transition: all 2s ease;
+        }
+        .desc { font-size: 1.05rem; line-height: 1.7; margin-bottom: 20px; color: #555; }
+        .mini-hint { font-size: 0.9rem; color: #95a5a6; }
+
+        .menu-btn {
+            display: block; width: 80%; max-width: 400px; margin: 15px auto;
+            padding: 15px; font-size: 1.2rem; font-weight: bold;
+            background-color: #3498db; color: white; border: none; border-radius: 8px;
+            cursor: pointer; transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(52, 152, 219, 0.2);
+        }
+        .menu-btn:hover { background-color: #2980b9; transform: translateY(-2px); box-shadow: 0 6px 8px rgba(52, 152, 219, 0.3); }
+        #start-btn { background-color: #e67e22; font-size: 1.5rem; padding: 20px; box-shadow: 0 6px 12px rgba(230, 126, 34, 0.3); }
+        #start-btn:hover { background-color: #d35400; box-shadow: 0 8px 15px rgba(230, 126, 34, 0.4); }
+
+        /* --- 盤数えらび --- */
+        .count-select { margin-bottom: 20px; font-weight: bold; color: #555; }
+        .count-btn {
+            border: 2px solid #3498db; background: white; color: #3498db;
+            border-radius: 999px; padding: 8px 20px; margin: 0 5px;
+            font-size: 1.05rem; font-weight: bold; cursor: pointer; transition: all 0.15s;
+        }
+        .count-btn.selected { background: #3498db; color: white; }
+
+        /* --- 盤面 --- */
+        #boards {
+            display: flex; flex-wrap: wrap; gap: 18px;
+            justify-content: center; align-items: flex-start;
+            margin: 25px auto;
+            --cell: min(52px, 11.5vw);
+        }
+        .board-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+        .board-label { font-weight: bold; color: #7f8c8d; font-size: 0.95rem; }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, var(--cell));
+            grid-template-rows: repeat(3, var(--cell));
+            gap: 5px; padding: 8px; border-radius: 12px;
+            background: rgba(44, 62, 80, 0.06);
+            transition: opacity 0.4s, filter 0.4s;
+        }
+        body.sad-mode .board { background: rgba(0, 0, 0, 0.25); }
+        .board.dead { opacity: 0.5; filter: grayscale(45%); }
+        .board.dead .cell { cursor: default; }
+
+        .cell {
+            width: var(--cell); height: var(--cell);
+            background-color: #ecf0f1; border-radius: 8px;
+            font-size: calc(var(--cell) * 0.62); font-weight: bold; color: #e74c3c;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; user-select: none;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        body.sad-mode .cell { background-color: #34495e; color: #c0392b; }
+        .cell:hover { background-color: #d5dbdb; }
+        .cell.taken { cursor: default; background-color: #ecf0f1; }
+        body.sad-mode .cell.taken { background-color: #34495e; }
+
+        /* --- 終了した盤のライン（灰色で記録） --- */
+        .cell.dead-line {
+            background-color: #95a5a6 !important;
+            color: #ffffff !important;
+        }
+
+        /* --- CPU詰み表示：残りのマスをピンク色に --- */
+        .cell.trapped {
+            background-color: #ffc0cb !important;
+        }
+
+        /* --- 敗着ライン強調（最後の盤で並んでしまった3マス） --- */
+        .cell.lose-line {
+            background-color: #e74c3c !important;
+            color: #ffffff !important;
+            box-shadow: 0 0 18px rgba(231, 76, 60, 0.85);
+            animation: losePulse 0.9s ease-in-out infinite;
+        }
+        body.sad-mode .cell.lose-line {
+            background-color: #e74c3c !important;
+            color: #ffffff !important;
+        }
+        @keyframes losePulse {
+            0%, 100% { transform: scale(1.0);  box-shadow: 0 0 10px rgba(231, 76, 60, 0.6); }
+            50%      { transform: scale(1.07); box-shadow: 0 0 26px rgba(231, 76, 60, 1.0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .cell.lose-line { animation: none; }
+        }
+
+        #status {
+            font-size: 1.5rem; font-weight: bold; margin-bottom: 6px; min-height: 30px;
+            color: #2c3e50; transition: color 2s ease;
+        }
+        body.sad-mode #status { color: #e74c3c !important; }
+        #sub-note {
+            font-size: 1.0rem; font-weight: bold; color: #e67e22; min-height: 22px; margin-bottom: 4px;
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="start-overlay">
+        <h1>MULTI NOTAKTO</h1>
+        <p>※BGM・効果音が鳴ります</p>
+        <button id="start-btn" class="menu-btn" onclick="initGame()">ゲームをはじめる</button>
+    </div>
+
+    <div class="container">
+        <h1 class="header-title">数学ゲームで遊ぼう！<br>ーゲームで体験する「数学教育ゼミナール」ー</h1>
+        <h2 class="main-title">マルチノタクト</h2>
+
+        <div id="menu">
+            <p class="desc">
+                ノタクトを、複数の盤で同時にプレイ！<br>
+                自分の番に、生きている盤のどれか1つに <b>×</b> を置きます。<br>
+                3つ並んだ盤は「終了」——その盤にはもう打てません。<br>
+                <b>最後に残った盤で3つ並べてしまった人の負け！</b><br>
+                <span class="mini-hint">盤の数によって、勝てる側が変わる…！？</span>
+            </p>
+            <div class="count-select">
+                盤の数：
+                <button type="button" class="count-btn" data-n="1" onclick="setBoardCount(1)">1盤</button>
+                <button type="button" class="count-btn selected" data-n="2" onclick="setBoardCount(2)">2盤</button>
+                <button type="button" class="count-btn" data-n="3" onclick="setBoardCount(3)">3盤</button>
+            </div>
+            <button class="menu-btn" onclick="startGame('pvp')">👤 2人対戦モード</button>
+            <button class="menu-btn" onclick="startGame('cpu_second')">💻 CPU対戦 (あなたが先手)</button>
+            <button class="menu-btn" onclick="startGame('cpu_first')">💻 CPU対戦 (CPUが先手)</button>
+        </div>
+
+        <div id="game" class="hidden">
+            <div id="status">先手の番です</div>
+            <div id="sub-note"></div>
+            <div id="boards"></div>
+            <button class="menu-btn back-btn" onclick="showMenu()">メニューに戻る</button>
+        </div>
+    </div>
+
+    <div id="confetti-container"></div>
+
+    <script>
+        // --- ゲーム用変数 ---
+        // boards[b][i]: 0=空, 1=×（両者共通）
+        let boardCount = 2;
+        let boards = [];
+        let isPlayer1Turn = true;
+        let currentMode = '';
+        let gameOver = false;
+        let cpuTimer = null;
+        let confettiTimer = null;
+        let subNoteTimer = null;
+
+        let cellEls = [];   // cellEls[b][i]
+        let boardEls = [];  // 盤のコンテナ
+        let labelEls = [];  // 盤のラベル
+        const BOARD_NAMES = ['A', 'B', 'C'];
+
+        const losePatterns = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],
+            [0, 4, 8], [2, 4, 6]
+        ];
+        const LINE_MASKS = losePatterns.map(p => (1 << p[0]) | (1 << p[1]) | (1 << p[2]));
+
+        // --- 音声生成用変数 ---
+        let audioCtx = null;
+        let isPlayingBGM = false;
+        let bgmInterval;
+        let noteIdx = 0;
+
+        const melody = [
+            523.25, 659.25, 783.99, 659.25,
+            523.25, 659.25, 783.99, 659.25,
+            698.46, 880.00, 1046.50, 880.00,
+            698.46, 880.00, 1046.50, 880.00,
+            587.33, 783.99, 987.77, 783.99,
+            587.33, 783.99, 987.77, 783.99,
+            523.25, 659.25, 783.99, 1046.50,
+            0, 0, 0, 0
+        ];
+
+        // --- 超強固な初期化処理 ---
+        function initGame() {
+            const overlay = document.getElementById('start-overlay');
+            if (overlay) overlay.style.display = 'none';
+            try {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (AudioContext) {
+                    if (!audioCtx) audioCtx = new AudioContext();
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+                    startBGM();
+                }
+            } catch (error) {
+                console.warn("ブラウザの制限により音声がブロックされました。無音で進行します。", error);
+            }
+        }
+
+        // --- BGM・効果音 ---
+        function playSE() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            try {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+                osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+                osc.start(audioCtx.currentTime);
+                osc.stop(audioCtx.currentTime + 0.2);
+            } catch(e) {}
+        }
+
+        // 盤が1枚終了したときの「ドンドン」という低い2音
+        function playBoardDeadSE() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            try {
+                const notes = [{ f: 392.00, d: 0.12 }, { f: 261.63, d: 0.28 }];
+                let t = audioCtx.currentTime;
+                notes.forEach(n => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(n.f, t);
+                    gain.gain.setValueAtTime(0.12, t);
+                    gain.gain.exponentialRampToValueAtTime(0.001, t + n.d);
+                    osc.start(t); osc.stop(t + n.d);
+                    t += n.d;
+                });
+            } catch(e) {}
+        }
+
+        function playBGMNote() {
+            if(!isPlayingBGM || !audioCtx || audioCtx.state === 'suspended') return;
+            try {
+                let freq = melody[noteIdx];
+                if (freq > 0) {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+                    osc.start();
+                    osc.stop(audioCtx.currentTime + 0.15);
+                }
+                noteIdx = (noteIdx + 1) % melody.length;
+            } catch(e) {}
+        }
+
+        function startBGM() {
+            if(isPlayingBGM) return;
+            isPlayingBGM = true;
+            noteIdx = 0;
+            bgmInterval = setInterval(playBGMNote, 220);
+        }
+
+        function stopBGM() {
+            isPlayingBGM = false;
+            clearInterval(bgmInterval);
+        }
+
+        // --- 派手な祝福演出（ファンファーレ） ---
+        function playVictoryFanfare() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            try {
+                const notes = [
+                    { f: 523.25, d: 0.15 }, { f: 523.25, d: 0.15 }, { f: 523.25, d: 0.15 },
+                    { f: 659.25, d: 0.15 }, { f: 587.33, d: 0.15 }, { f: 783.99, d: 0.6 }
+                ];
+                let startTime = audioCtx.currentTime;
+                notes.forEach(note => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.type = 'square';
+                    osc.frequency.setValueAtTime(note.f, startTime);
+                    gain.gain.setValueAtTime(0.1, startTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, startTime + note.d);
+                    osc.start(startTime);
+                    osc.stop(startTime + note.d);
+                    startTime += note.d;
+                });
+            } catch(e) {}
+        }
+
+        // --- 大袈裟な悲しい演出（ゴーンという鐘） ---
+        function playSadGong() {
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            try {
+                const osc1 = audioCtx.createOscillator();
+                const osc2 = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc1.connect(gain); osc2.connect(gain); gain.connect(audioCtx.destination);
+                osc1.type = 'sine'; osc2.type = 'triangle';
+                osc1.frequency.setValueAtTime(100, audioCtx.currentTime);
+                osc2.frequency.setValueAtTime(145, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 3.0);
+                osc1.start(audioCtx.currentTime);
+                osc2.start(audioCtx.currentTime);
+                osc1.stop(audioCtx.currentTime + 3.0);
+                osc2.stop(audioCtx.currentTime + 3.0);
+            } catch(e) {}
+        }
+
+        // --- 紙吹雪の生成 ---
+        function spawnConfetti(count) {
+            const container = document.getElementById('confetti-container');
+            if (!container) return;
+            const colors = ['#f1c40f', '#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#e67e22'];
+            for (let i = 0; i < count; i++) {
+                const conf = document.createElement('div');
+                conf.classList.add('confetti');
+                conf.style.left = Math.random() * 100 + 'vw';
+                conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                const duration = Math.random() * 2 + 2;
+                const delay = Math.random() * 0.5;
+                conf.style.animation = `fall ${duration}s linear ${delay}s forwards`;
+                if (Math.random() > 0.5) conf.style.borderRadius = '50%';
+                conf.addEventListener('animationend', () => conf.remove());
+                container.appendChild(conf);
+            }
+        }
+
+        // 勝利画面にいる限り、紙吹雪を降らせ続ける
+        function throwConfetti() {
+            stopConfetti();
+            const container = document.getElementById('confetti-container');
+            if (container) container.innerHTML = '';
+            spawnConfetti(150);
+            confettiTimer = setInterval(() => spawnConfetti(40), 1200);
+        }
+
+        function stopConfetti() {
+            clearInterval(confettiTimer);
+            confettiTimer = null;
+        }
+
+        function clearEffects() {
+            stopConfetti();
+            document.body.classList.remove('sad-mode');
+            const container = document.getElementById('confetti-container');
+            if (container) container.innerHTML = '';
+        }
+
+        /* ============================================================
+           盤の状態・判定（内部ではビットマスクで扱う）
+           ============================================================ */
+        function maskOf(b) {
+            let m = 0;
+            for (let i = 0; i < 9; i++) if (b[i] === 1) m |= (1 << i);
+            return m;
+        }
+        function maskHasLine(m) {
+            return LINE_MASKS.some(x => (m & x) === x);
+        }
+        function boardDead(b) { return maskHasLine(maskOf(b)); }
+        function liveIndices() {
+            const out = [];
+            for (let b = 0; b < boardCount; b++) if (!boardDead(boards[b])) out.push(b);
+            return out;
+        }
+
+        /* ============================================================
+           完全読みソルバー
+           状態 = 生きている盤のマスクの多重集合（対称性で正準化してメモ化）
+           ============================================================ */
+        const SYMS = (() => {
+            const idx = (r, c) => 3 * r + c;
+            const base = [];
+            for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) base.push([r, c]);
+            const rots = [
+                (r, c) => [r, c], (r, c) => [c, 2 - r],
+                (r, c) => [2 - r, 2 - c], (r, c) => [2 - c, r]
+            ];
+            const out = [];
+            for (const rot of rots) {
+                out.push(base.map(([r, c]) => { const [rr, cc] = rot(r, c); return idx(rr, cc); }));
+                out.push(base.map(([r, c]) => { const [rr, cc] = rot(r, c); return idx(rr, 2 - cc); }));
+            }
+            return out;
+        })();
+
+        const canonCache = new Map();
+        function canon(m) {
+            if (canonCache.has(m)) return canonCache.get(m);
+            let best = 512;
+            for (const p of SYMS) {
+                let n = 0;
+                for (let i = 0; i < 9; i++) if ((m >> i) & 1) n |= (1 << p[i]);
+                if (n < best) best = n;
+            }
+            canonCache.set(m, best);
+            return best;
+        }
+
+        // masks（生きている盤のマスク配列）から打てる手をすべて列挙
+        function enumMovesFromMasks(masks) {
+            const out = [];
+            for (let k = 0; k < masks.length; k++) {
+                const m = masks[k];
+                for (let i = 0; i < 9; i++) {
+                    if ((m >> i) & 1) continue;
+                    const nm = m | (1 << i);
+                    if (maskHasLine(nm)) {
+                        if (masks.length === 1) {
+                            out.push({ k, i, suicide: true, child: null }); // 最後の盤で完成＝負け
+                        } else {
+                            out.push({ k, i, suicide: false, child: masks.filter((_, x) => x !== k) });
+                        }
+                    } else {
+                        const c = masks.slice(); c[k] = nm;
+                        out.push({ k, i, suicide: false, child: c });
+                    }
+                }
+            }
+            return out;
+        }
+
+        const solveCache = new Map();
+        function stateKey(masks) {
+            return masks.map(canon).sort((a, b) => a - b).join(',');
+        }
+        // 手番側が必勝なら true
+        function solveWin(masks) {
+            const key = stateKey(masks);
+            const hit = solveCache.get(key);
+            if (hit !== undefined) return hit;
+            let win = false;
+            for (const mv of enumMovesFromMasks(masks)) {
+                if (mv.suicide) continue;
+                if (!solveWin(mv.child)) { win = true; break; }
+            }
+            solveCache.set(key, win);
+            return win;
+        }
+
+        // 実際の盤番号つきで合法手を列挙
+        function legalMoves() {
+            const live = liveIndices();
+            const liveMasks = live.map(b => maskOf(boards[b]));
+            const moves = [];
+            for (const mv of enumMovesFromMasks(liveMasks)) {
+                moves.push({ b: live[mv.k], i: mv.i, suicide: mv.suicide, child: mv.child });
+            }
+            return moves;
+        }
+
+        /* ============================================================
+           画面まわり
+           ============================================================ */
+        function setBoardCount(n) {
+            boardCount = n;
+            document.querySelectorAll('.count-btn').forEach(btn => {
+                btn.classList.toggle('selected', Number(btn.dataset.n) === n);
+            });
+        }
+
+        function buildBoards() {
+            const wrap = document.getElementById('boards');
+            wrap.innerHTML = '';
+            cellEls = []; boardEls = []; labelEls = [];
+            for (let b = 0; b < boardCount; b++) {
+                const bw = document.createElement('div');
+                bw.className = 'board-wrap';
+                const label = document.createElement('div');
+                label.className = 'board-label';
+                label.innerText = boardCount > 1 ? '盤' + BOARD_NAMES[b] : '';
+                const bd = document.createElement('div');
+                bd.className = 'board';
+                const row = [];
+                for (let i = 0; i < 9; i++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.addEventListener('click', () => makeMove(b, i));
+                    bd.appendChild(cell);
+                    row.push(cell);
+                }
+                bw.appendChild(label); bw.appendChild(bd);
+                wrap.appendChild(bw);
+                cellEls.push(row); boardEls.push(bd); labelEls.push(label);
+            }
+        }
+
+        function showMenu() {
+            clearTimeout(cpuTimer);
+            clearTimeout(subNoteTimer);
+            clearEffects();
+            startBGM();
+            document.getElementById('menu').classList.remove('hidden');
+            document.getElementById('game').classList.add('hidden');
+        }
+
+        function startGame(mode) {
+            clearTimeout(cpuTimer);
+            clearTimeout(subNoteTimer);
+            clearEffects();
+            currentMode = mode;
+            boards = Array.from({ length: boardCount }, () => Array(9).fill(0));
+            isPlayer1Turn = true;
+            gameOver = false;
+            buildBoards();
+            updateBoardUI();
+            document.getElementById('sub-note').innerText = '';
+            document.getElementById('menu').classList.add('hidden');
+            document.getElementById('game').classList.remove('hidden');
+            updateStatus();
+
+            if (mode === 'cpu_first') {
+                cpuTimer = setTimeout(playCPU, 500);
+            }
+        }
+
+        function showSubNote(msg) {
+            const el = document.getElementById('sub-note');
+            el.innerText = msg;
+            clearTimeout(subNoteTimer);
+            subNoteTimer = setTimeout(() => { el.innerText = ''; }, 2200);
+        }
+
+        function makeMove(b, i) {
+            if (gameOver || boards[b][i] !== 0 || boardDead(boards[b])) return;
+            if (currentMode === 'cpu_second' && !isPlayer1Turn) return;
+            if (currentMode === 'cpu_first' && isPlayer1Turn) return;
+
+            playSE();
+            placeMark(b, i);
+
+            if (!gameOver && (currentMode === 'cpu_second' || currentMode === 'cpu_first')) {
+                cpuTimer = setTimeout(playCPU, 500);
+            }
+        }
+
+        function placeMark(b, i) {
+            boards[b][i] = 1;
+            updateBoardUI();
+
+            if (boardDead(boards[b])) {
+                const live = liveIndices();
+                if (live.length === 0) {
+                    // 最後の盤で3つ並べてしまった → 敗着
+                    gameOver = true;
+                    stopBGM();
+                    highlightFatalLine(b);
+
+                    let message = "";
+                    if (currentMode === 'pvp') {
+                        const winnerName = isPlayer1Turn ? "後手" : "先手";
+                        message = winnerName + "の勝ちです！🎉";
+                        document.getElementById('status').style.color = "#27ae60";
+                        playVictoryFanfare();
+                        throwConfetti();
+                    } else {
+                        let playerLoses = false;
+                        if (currentMode === 'cpu_second' && isPlayer1Turn) playerLoses = true;
+                        if (currentMode === 'cpu_first' && !isPlayer1Turn) playerLoses = true;
+
+                        if (playerLoses) {
+                            message = "あなたの負けです…";
+                            document.body.classList.add('sad-mode');
+                            playSadGong();
+                        } else {
+                            message = "大勝利！！🎉";
+                            document.getElementById('status').style.color = "#27ae60";
+                            playVictoryFanfare();
+                            throwConfetti();
+                        }
+                    }
+                    document.getElementById('status').innerText = message;
+                    return;
+                }
+                // 盤が1枚終了（ゲームは続行）
+                markDeadBoard(b);
+                playBoardDeadSE();
+                showSubNote('盤' + BOARD_NAMES[b] + 'で3つ並んだ！ この盤は終了');
+            }
+
+            isPlayer1Turn = !isPlayer1Turn;
+            updateStatus();
+        }
+
+        function updateStatus() {
+            if (gameOver) return;
+            document.getElementById('status').style.color = "#2c3e50";
+            let turnName = isPlayer1Turn ? "先手" : "後手";
+            if (currentMode === 'cpu_second') {
+                turnName = isPlayer1Turn ? "あなたの番です" : "CPUが思考中...";
+            } else if (currentMode === 'cpu_first') {
+                turnName = !isPlayer1Turn ? "あなたの番です" : "CPUが思考中...";
+            } else {
+                turnName = turnName + "の番です";
+            }
+            document.getElementById('status').innerText = turnName;
+        }
+
+        function updateBoardUI() {
+            for (let b = 0; b < boardCount; b++) {
+                for (let i = 0; i < 9; i++) {
+                    const cell = cellEls[b][i];
+                    if (boards[b][i] === 1) {
+                        cell.innerText = '×';
+                        cell.classList.add('taken');
+                    } else {
+                        cell.innerText = '';
+                        cell.classList.remove('taken');
+                    }
+                }
+            }
+        }
+
+        // 終了した盤：灰色にして、並んだラインを記録表示
+        function markDeadBoard(b) {
+            boardEls[b].classList.add('dead');
+            labelEls[b].innerText = '盤' + BOARD_NAMES[b] + '（終了）';
+            for (const p of losePatterns) {
+                if (p.every(i => boards[b][i] === 1)) {
+                    p.forEach(i => cellEls[b][i].classList.add('dead-line'));
+                }
+            }
+        }
+
+        // 敗着ライン（最後の盤で並んでしまった3マス）を赤く光らせる
+        function highlightFatalLine(b) {
+            for (const p of losePatterns) {
+                if (p.every(i => boards[b][i] === 1)) {
+                    p.forEach(i => cellEls[b][i].classList.add('lose-line'));
+                }
+            }
+        }
+
+        // CPUの負け確定：残りの空きマスをピンク色にする
+        function markTrappedCells() {
+            for (const b of liveIndices()) {
+                for (let i = 0; i < 9; i++) {
+                    if (boards[b][i] === 0) cellEls[b][i].classList.add('trapped');
+                }
+            }
+        }
+
+        /* ============================================================
+           完全読みCPU
+           ============================================================ */
+        function playCPU() {
+            if (gameOver) return;
+
+            const moves = legalMoves();
+            const safe = moves.filter(m => !m.suicide);
+
+            // 負け確定：最後の盤のどこに置いても3つ並んでしまう
+            // (1) 残りのマスをピンク色に (2) メッセージを2秒間表示 (3) 観念の一手 →「大勝利！」演出
+            if (safe.length === 0) {
+                markTrappedCells();
+                const st = document.getElementById('status');
+                st.style.color = '#e67e22';
+                st.innerText = 'CPUがどこに置いても並んでしまう…！';
+                const forced = moves[Math.floor(Math.random() * moves.length)];
+                cpuTimer = setTimeout(() => {
+                    if (gameOver) return;
+                    playSE();
+                    placeMark(forced.b, forced.i);
+                }, 2000);
+                return;
+            }
+
+            let mv;
+            // 1. 必勝手があればその中からランダムに
+            const winning = safe.filter(m => !solveWin(m.child));
+            if (winning.length > 0) {
+                mv = winning[Math.floor(Math.random() * winning.length)];
+            } else {
+                // 2. 必敗局面では「相手がミスしやすい手」
+                //    （相手の安全手のうち、必勝手の割合が最小になる手）
+                let best = [], bestScore = Infinity;
+                for (const m of safe) {
+                    const oppMoves = enumMovesFromMasks(m.child);
+                    const oppSafe = oppMoves.filter(x => !x.suicide);
+                    let oppWins = 0;
+                    for (const o of oppSafe) {
+                        if (!solveWin(o.child)) oppWins++;
+                    }
+                    const score = oppSafe.length > 0 ? oppWins / oppSafe.length : 1;
+                    if (score < bestScore - 1e-9) { bestScore = score; best = [m]; }
+                    else if (Math.abs(score - bestScore) < 1e-9) best.push(m);
+                }
+                mv = best[Math.floor(Math.random() * best.length)];
+            }
+
+            playSE();
+            placeMark(mv.b, mv.i);
+        }
+    </script>
+</body>
+</html>
