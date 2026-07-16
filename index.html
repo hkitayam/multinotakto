@@ -112,11 +112,6 @@
             color: #ffffff !important;
         }
 
-        /* --- CPU詰み表示：残りのマスをピンク色に --- */
-        .cell.trapped {
-            background-color: #ffc0cb !important;
-        }
-
         /* --- 敗着ライン強調（最後の盤で並んでしまった3マス） --- */
         .cell.lose-line {
             background-color: #e74c3c !important;
@@ -134,6 +129,13 @@
         }
         @media (prefers-reduced-motion: reduce) {
             .cell.lose-line { animation: none; }
+        }
+
+        /* --- CPU詰み表示：残りのマスをピンク色に ---
+             ※敗着ラインより後に置くことで、観念の一手のマスはピンクのまま
+               赤い点滅だけが乗る（通常版・ドーナツ版と同じ見た目） */
+        .cell.trapped {
+            background-color: #ffc0cb !important;
         }
 
         #status {
